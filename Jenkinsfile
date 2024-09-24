@@ -45,13 +45,26 @@ pipeline {
             }
         }
 
+        stage('Prepare Docker Directory on Server') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Creating directory for Dockerfiles on remote server...'
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        mkdir -p /home/ec2-user/dockerfiles
+                        "
+                    '''
+                }
+            }
+        }
+
         stage('Copy Dockerfiles to Server') {
             steps {
-                sshagent(['webserver']) {
-                    echo 'Copying Dockerfiles to Docker server...'
+                sshagent(['Tomcat']) {
+                    echo 'Copying Dockerfiles to remote server...'
                     sh '''
-                        scp -o StrictHostKeyChecking=no Dockerfile-mysql ec2-user@65.0.89.79:/path/to/dockerfiles/
-                        scp -o StrictHostKeyChecking=no Dockerfile-tomcat ec2-user@65.0.89.79:/path/to/dockerfiles/
+                        scp -o StrictHostKeyChecking=no  Dockerfile-mysql ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
+                        scp -o StrictHostKeyChecking=no Dockerfile-tomcat ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
                     '''
                 }
             }
@@ -63,23 +76,23 @@ pipeline {
                     echo 'Building Docker images on remote server...'
                     sh '''
                         ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
-                        cd /path/to/dockerfiles &&
-                        docker build -t my-mysql-image -f Dockerfile-mysql . &&
-                        docker build -t my-tomcat-image -f Dockerfile-tomcat .
+                        cd /home/ec2-user/dockerfiles &&
+                        docker build -t my-image-1 -f Dockerfile-mysql . &&
+                        docker build -t my-image-2 -f Dockerfile-tomcat .
                         "
                     '''
                 }
             }
         }
 
-        stage('Run Docker Containers') {
+        stage('Deploy to Server') {
             steps {
                 sshagent(['Tomcat']) {
                     echo 'Running Docker containers on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66"
-                        docker run -d --name mysql-container -e MYSQL_ROOT_PASSWORD=my-secret-pw -p 3306:3306 my-mysql-image &&
-                        docker run -d --name tomcat-container -p 8081:8080 my-tomcat-image
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        docker run -d --name my-mysql-container -p 8081:8080 my-image-1 &&
+                        docker run -d --name my-tomcat-container -p 8082:8080 my-image-2
                         "
                     '''
                 }
