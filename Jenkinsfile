@@ -45,22 +45,41 @@ pipeline {
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Copy Dockerfiles to Server') {
             steps {
-                echo 'Building Docker images...'
-                sh 'docker build -t my-image-1 -f Dockerfile1 .'
-                sh 'docker build -t my-image-2 -f Dockerfile2 .'
+                sshagent(['webserver']) {
+                    echo 'Copying Dockerfiles to Docker server...'
+                    sh '''
+                        scp -o StrictHostKeyChecking=no Dockerfile-mysql ec2-user@65.0.89.79:/path/to/dockerfiles/
+                        scp -o StrictHostKeyChecking=no Dockerfile-tomcat ec2-user@65.0.89.79:/path/to/dockerfiles/
+                    '''
+                }
             }
         }
 
-        stage('Deploy to Server') {
+        stage('Build Docker Images') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Building Docker images on remote server...'
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        cd /path/to/dockerfiles &&
+                        docker build -t my-mysql-image -f Dockerfile-mysql . &&
+                        docker build -t my-tomcat-image -f Dockerfile-tomcat .
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Run Docker Containers') {
             steps {
                 sshagent(['Tomcat']) {
                     echo 'Running Docker containers on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
-                        docker run -d -p 8081:8080 my-image-1 &&
-                        docker run -d -p 8082:8080 my-image-2
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66"
+                        docker run -d --name mysql-container -e MYSQL_ROOT_PASSWORD=my-secret-pw -p 3306:3306 my-mysql-image &&
+                        docker run -d --name tomcat-container -p 8081:8080 my-tomcat-image
                         "
                     '''
                 }
