@@ -5,7 +5,7 @@ FROM tomcat:8.5
 EXPOSE 8083
 
 # Copy the WAR file
-COPY .LoginWebApp.war /usr/local/tomcat/webapps/
+COPY /home/ec2-user/dockerfiles/LoginWebApp.war /usr/local/tomcat/webapps/
 
 # Change the working directory
 WORKDIR /usr/local/tomcat/webapps/
