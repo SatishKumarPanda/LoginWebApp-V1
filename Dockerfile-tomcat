@@ -1,9 +1,14 @@
-#Base image
+# Base image
 FROM tomcat:8.5
 
-#COPY
+# Expose port 8083
+EXPOSE 8083
+
+# Copy the WAR file
 COPY .LoginWebApp.war /usr/local/tomcat/webapps/
 
+# Change the working directory
 WORKDIR /usr/local/tomcat/webapps/
 
+# Command to run Tomcat
 CMD ["catalina.sh", "run"]
