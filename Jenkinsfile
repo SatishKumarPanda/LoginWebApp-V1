@@ -65,6 +65,7 @@ pipeline {
                     sh '''
                         scp -o StrictHostKeyChecking=no  Dockerfile-mysql ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
                         scp -o StrictHostKeyChecking=no Dockerfile-tomcat ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
+                        scp -o StrictHostKeyChecking=no dumb ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
                     '''
                 }
             }
