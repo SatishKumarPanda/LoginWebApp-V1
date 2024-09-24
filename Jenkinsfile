@@ -66,7 +66,7 @@ pipeline {
                         scp -o StrictHostKeyChecking=no  Dockerfile-mysql ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
                         scp -o StrictHostKeyChecking=no Dockerfile-tomcat ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
                         scp -o StrictHostKeyChecking=no -r dump ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
-                         scp -o StrictHostKeyChecking=no LoginWebApp.war ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
+                         scp -o StrictHostKeyChecking=no target/LoginWebApp.war ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
                         
                     '''
                 }
