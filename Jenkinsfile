@@ -58,7 +58,7 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Running Docker containers on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@ "
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
                         docker run -d -p 8081:8080 my-image-1 &&
                         docker run -d -p 8082:8080 my-image-2
                         "
