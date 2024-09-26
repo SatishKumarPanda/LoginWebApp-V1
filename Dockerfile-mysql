@@ -8,4 +8,4 @@ ENV MYSQL_PASSWORD=Sunday@2019
 ENV MYSQL_ROOT_PASSWORD=Sunday@2019
 
 # Copy initialization scripts (if any)
-COPY ./dump /docker-entrypoint-initdb.d
+COPY dump /docker-entrypoint-initdb.d
