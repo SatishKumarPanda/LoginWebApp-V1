@@ -88,23 +88,22 @@ pipeline {
                 }
             }
         }
-
         stage('Login to Docker Hub') {
-            steps {
-                sshagent(['Tomcat']) {
-                    echo 'Logging in to Docker Hub...'
+    steps {
+        sshagent(['Tomcat']) {
+            script {
+                withCredentials([usernamePassword(credentialsId: 'docker-hub', passwordVariable: 'DOCKER_PSW', usernameVariable: 'DOCKER_USR')]) {
                     sh '''
                         ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
-                        sudo -s docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin 
-                        docker tag my-image-1 satishkumarpanda/my-mysql &&
-                        docker tag my-image-2 satishkumarpanda/my-tomcat
-                         docker push satishkumarpanda/my-mysql &&
-                         docker push satishkumarpanda/my-tomcat
+                        echo $DOCKER_PSW | docker login -u $DOCKER_USR --password-stdin 
                         "
                     '''
                 }
             }
         }
+    }
+}
+
 
         stage('Deploy to Server') {
             steps {
