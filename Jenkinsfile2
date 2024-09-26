@@ -13,47 +13,127 @@ pipeline {
     }      
 
     stages {
-        // Existing stages...
+        stage('Build') {
+            steps {
+                echo 'Building the application...'
+                sh 'mvn clean install'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                echo 'Running tests...'
+                sh 'mvn test'
+            }
+        }
+        
+        stage('Publish') {
+            steps {
+                echo 'Packaging the application...'
+                sh 'mvn package'
+            }
+        }
 
-        stage('Build and Push Docker Images') {
+        stage('Upload to S3') {
+            steps {
+                echo 'Configuring AWS and uploading artifact...'
+                sh 'aws configure set region ap-south-1'
+                sh 'aws s3 cp ./target/*.war s3://jenkinsucket01'
+            }
+            post {
+                success {
+                    echo 'Archiving artifacts...'
+                    archiveArtifacts artifacts: 'target/*.war', fingerprint: true
+                }
+            }
+        }
+
+        stage('Prepare Docker Directory on Server') {
             steps {
                 sshagent(['Tomcat']) {
-                    echo 'Building, pushing application images, and handling phpMyAdmin...'
+                    echo 'Creating directory for Dockerfiles on remote server...'
+                    sh '''
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
+                        mkdir -p /home/ec2-user/dockerfiles
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Copy Dockerfiles to Server') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Copying Dockerfiles to remote server...'
+                    sh '''
+                        scp ${SSH_OPTIONS} Dockerfile-mysql ${DEPLOYMENT_SERVER}:/home/ec2-user/dockerfiles/
+                        scp ${SSH_OPTIONS} Dockerfile-tomcat ${DEPLOYMENT_SERVER}:/home/ec2-user/dockerfiles/
+                        scp ${SSH_OPTIONS} -r dump ${DEPLOYMENT_SERVER}:/home/ec2-user/dockerfiles/
+                        scp ${SSH_OPTIONS} target/LoginWebApp.war ${DEPLOYMENT_SERVER}:/home/ec2-user/dockerfiles/
+                    '''
+                }
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Building Docker images on remote server...'
+                    sh '''
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
+                        cd /home/ec2-user/dockerfiles &&
+                        sudo chmod 777 /var/run/docker.sock &&
+                        docker build -t my-image-1 -f Dockerfile-mysql . &&
+                        docker build -t my-image-2 -f Dockerfile-tomcat .
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Pull phpMyAdmin Image') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Pulling phpMyAdmin image...'
+                    sh '''
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
+                        docker pull phpmyadmin/phpmyadmin
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Login to Docker Hub') {
+            steps {
+                sshagent(['Tomcat']) {
                     script {
                         withCredentials([usernamePassword(credentialsId: 'docker-hub', passwordVariable: 'DOCKER_PSW', usernameVariable: 'DOCKER_USR')]) {
                             sh '''
                                 ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
-                                cd /home/ec2-user/dockerfiles &&
-                                sudo chmod 777 /var/run/docker.sock &&
-                                docker build -t my-image-1 -f Dockerfile-mysql . &&
-                                docker build -t my-image-2 -f Dockerfile-tomcat . &&
-                                
-                                # Pulling phpMyAdmin image
-                                docker pull phpmyadmin/phpmyadmin && \
-                                
-                                # Creating a network
-                                docker network create my-network || true && \
-                                
-                                # Running MySQL container
-                                docker run -d --name my-mysql-container --network my-network -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=mydb -p 3306:3306 my-image-1 && \
+                                echo $DOCKER_PSW | docker login -u $DOCKER_USR --password-stdin && \
+                                echo 'Login successful.' || exit 1
 
-                                # Running Tomcat container linked to MySQL
-                                docker run -d --name my-tomcat-container --network my-network -p 8082:8080 my-image-2 && \
-                                
-                                # Running phpMyAdmin container linked to MySQL
-                                docker run -d --name my-phpmyadmin --network my-network -e PMA_HOST=my-mysql-container -p 8080:80 phpmyadmin/phpmyadmin && \
+                                docker tag my-image-1 satishkumarpanda/my-mysql && \
+                                echo 'Tagged my-image-1 successfully.' || exit 1
 
-                                # Tagging and pushing application images
-                                echo $DOCKER_PSW | docker login -u $DOCKER_USR --password-stdin &&
-                                docker tag my-image-1 satishkumarpanda/my-mysql &&
-                                docker tag my-image-2 satishkumarpanda/my-tomcat &&
-                                docker tag phpmyadmin/phpmyadmin satishkumarpanda/my-phpmyadmin &&
-                                
-                                # Pushing images to Docker Hub
-                                docker push satishkumarpanda/my-mysql &&
-                                docker push satishkumarpanda/my-tomcat &&
-                                docker push satishkumarpanda/my-phpmyadmin &&
-                                docker logout
+                                docker tag my-image-2 satishkumarpanda/my-tomcat && \
+                                echo 'Tagged my-image-2 successfully.' || exit 1
+
+                                docker tag phpmyadmin/phpmyadmin satishkumarpanda/my-phpmyadmin && \
+                                echo 'Tagged phpMyAdmin successfully.' || exit 1
+
+                                docker push satishkumarpanda/my-mysql && \
+                                echo 'Pushed my-mysql successfully.' || exit 1
+
+                                docker push satishkumarpanda/my-tomcat && \
+                                echo 'Pushed my-tomcat successfully.' || exit 1
+
+                                docker push satishkumarpanda/my-phpmyadmin && \
+                                echo 'Pushed phpMyAdmin successfully.' || exit 1
+
+                                docker logout && \
+                                echo 'Logged out of Docker Hub successfully.' || exit 1
                                 "
                             '''
                         }
@@ -62,29 +142,56 @@ pipeline {
             }
         }
 
-        stage('Deploy and Clean Up') {
+        stage('Deploy to Server') {
             steps {
                 sshagent(['Tomcat']) {
-                    echo 'Deploying containers and cleaning up...'
+                    echo 'Running Docker containers on remote server...'
                     sh '''
                         ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
-                        # Create network
                         docker network create my-network || true &&
+                        docker stop my-mysql-container || true &&
+                        docker rm my-mysql-container || true &&
+                        docker stop my-tomcat-container || true &&
+                        docker rm my-tomcat-container || true &&
+                        docker stop my-phpmyadmin || true &&
+                        docker rm my-phpmyadmin || true &&
 
-                        # Deploy containers
+                        # Run MySQL container
                         docker run -d --name my-mysql-container --network my-network -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=mydb -p 3306:3306 satishkumarpanda/my-mysql &&
+
+                        # Run Tomcat container linked to MySQL
                         docker run -d --name my-tomcat-container --network my-network -p 8082:8080 satishkumarpanda/my-tomcat &&
-                        docker run -d --name my-phpmyadmin --network my-network -e PMA_HOST=my-mysql-container -p 8080:80 satishkumarpanda/my-phpmyadmin &&
-                        
-                        # Clean up old images
-                        docker rmi -f satishkumarpanda/my-mysql satishkumarpanda/my-tomcat &&
-                        rm -rf /home/ec2-user/dockerfiles/*
+
+                        # Run phpMyAdmin container linked to MySQL
+                        docker run -d --name my-phpmyadmin --network my-network -e PMA_HOST=my-mysql-container -p 8080:80 satishkumarpanda/my-phpmyadmin
                         "
                     '''
                 }
             }
         }
 
-        // Existing stages...
-    }  
+        stage('Clean Master Server') {
+            steps {
+                echo 'Cleaning up temporary files on Jenkins master server...'
+                sh '''
+                    rm -rf Dockerfile-mysql Dockerfile-tomcat dump target/LoginWebApp.war &&
+                    echo "Cleanup completed on Jenkins master server."
+                '''
+            }
+        }
+
+        stage('Clean Deployment Server') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Cleaning up Docker images and temporary files on deployment server...'
+                    sh '''
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
+                        docker rmi -f satishkumarpanda/my-mysql satishkumarpanda/my-tomcat satishkumarpanda/my-phpmyadmin &&
+                        rm -rf /home/ec2-user/dockerfiles/*
+                        "
+                    '''
+                }
+            }
+        }
+    }
 }
