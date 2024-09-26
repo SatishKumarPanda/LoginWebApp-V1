@@ -108,8 +108,10 @@ pipeline {
                     echo 'Pushing Docker images to Docker Hub...'
                     sh '''
                         ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
-                        docker push  satishkumarpanda/my-image-1 &&
-                        docker push satishkumarpanda/my-image-2
+                        docker tag my-image-1 satishkumarpanda/my-mysql &&
+                        docker tag my-image-2 satishkumarpanda/my-tomcat
+                        docker push satishkumarpanda/my-mysql &&
+                        docker push satishkumarpanda/my-tomcat
                         "
                     '''
                 }
