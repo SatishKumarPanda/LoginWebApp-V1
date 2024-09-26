@@ -88,7 +88,7 @@ pipeline {
                 }
             }
         }
-      stage('Login to Docker Hub') {
+   stage('Login to Docker Hub') {
     steps {
         sshagent(['Tomcat']) {
             script {
@@ -109,7 +109,9 @@ pipeline {
 
                         docker push satishkumarpanda/my-tomcat && \
                         echo 'Pushed my-tomcat successfully.' || exit 1
-                        'docker logout'  
+
+                        docker logout && \
+                        echo 'Logged out of Docker Hub successfully.' || exit 1
                         "
                     '''
                 }
@@ -117,8 +119,6 @@ pipeline {
         }
     }
 }
-
-
 
         stage('Deploy to Server') {
             steps {
