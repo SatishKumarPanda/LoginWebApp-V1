@@ -153,7 +153,7 @@ pipeline {
                     echo 'Cleaning up Docker images and temporary files on deployment server...'
                     sh '''
                         ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
-                        docker rmi my-image-1 my-image-2 &&
+                        docker rmi -f my-image-1 my-image-2 &&
                         rm -rf /home/ec2-user/dockerfiles/*
                         "
                     '''
