@@ -88,14 +88,27 @@ pipeline {
                 }
             }
         }
-        stage('Login to Docker Hub') {
+      stage('Login to Docker Hub') {
     steps {
         sshagent(['Tomcat']) {
             script {
                 withCredentials([usernamePassword(credentialsId: 'docker-hub', passwordVariable: 'DOCKER_PSW', usernameVariable: 'DOCKER_USR')]) {
                     sh '''
                         ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
-                        echo $DOCKER_PSW | docker login -u $DOCKER_USR --password-stdin 
+                        echo $DOCKER_PSW | docker login -u $DOCKER_USR --password-stdin && \
+                        echo 'Login successful.' || exit 1
+
+                        docker tag my-image-1 satishkumarpanda/my-mysql && \
+                        echo 'Tagged my-image-1 successfully.' || exit 1
+
+                        docker tag my-image-2 satishkumarpanda/my-tomcat && \
+                        echo 'Tagged my-image-2 successfully.' || exit 1
+
+                        docker push satishkumarpanda/my-mysql && \
+                        echo 'Pushed my-mysql successfully.' || exit 1
+
+                        docker push satishkumarpanda/my-tomcat && \
+                        echo 'Pushed my-tomcat successfully.' || exit 1
                         "
                     '''
                 }
@@ -103,6 +116,7 @@ pipeline {
         }
     }
 }
+
 
 
         stage('Deploy to Server') {
