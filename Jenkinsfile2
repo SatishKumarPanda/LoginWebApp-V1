@@ -1,0 +1,100 @@
+pipeline {
+    agent any 
+    tools {
+        maven 'Maven'
+    }
+
+    environment {
+        AWS_ACCESS_KEY_ID     = credentials('jenkins-aws-secret-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('jenkins-aws-secret-access-key')
+        DOCKERHUB_CREDENTIALS  = credentials('docker-hub')
+        DEPLOYMENT_SERVER      = 'ec2-user@13.233.230.148'
+        SSH_OPTIONS            = '-o StrictHostKeyChecking=no'
+    }      
+
+    stages {
+        stage('Build, Test, Publish') {
+            steps {
+                echo 'Building, testing, and packaging the application...'
+                sh 'mvn clean install && mvn test && mvn package'
+            }
+        }
+
+        stage('Upload to S3') {
+            steps {
+                echo 'Uploading artifact to S3...'
+                sh 'aws configure set region ap-south-1 && aws s3 cp ./target/*.war s3://jenkinsucket01'
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'target/*.war', fingerprint: true
+                }
+            }
+        }
+
+        stage('Prepare and Copy Dockerfiles') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Preparing Dockerfiles on server...'
+                    sh '''
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "mkdir -p /home/ec2-user/dockerfiles"
+                        scp ${SSH_OPTIONS} Dockerfile-mysql Dockerfile-tomcat dump target/LoginWebApp.war ${DEPLOYMENT_SERVER}:/home/ec2-user/dockerfiles/
+                    '''
+                }
+            }
+        }
+
+        stage('Build and Push Docker Images') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Building and pushing Docker images...'
+                    script {
+                        withCredentials([usernamePassword(credentialsId: 'docker-hub', passwordVariable: 'DOCKER_PSW', usernameVariable: 'DOCKER_USR')]) {
+                            sh '''
+                                ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
+                                cd /home/ec2-user/dockerfiles &&
+                                sudo chmod 777 /var/run/docker.sock &&
+                                docker build -t my-image-1 -f Dockerfile-mysql . &&
+                                docker build -t my-image-2 -f Dockerfile-tomcat . &&
+                                echo $DOCKER_PSW | docker login -u $DOCKER_USR --password-stdin &&
+                                docker tag my-image-1 satishkumarpanda/my-mysql &&
+                                docker tag my-image-2 satishkumarpanda/my-tomcat &&
+                                docker push satishkumarpanda/my-mysql &&
+                                docker push satishkumarpanda/my-tomcat &&
+                                docker logout
+                                "
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy and Clean Up') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Deploying containers and cleaning up...'
+                    sh '''
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
+                        docker stop my-mysql-container || true &&
+                        docker rm my-mysql-container || true &&
+                        docker stop my-tomcat-container || true &&
+                        docker rm my-tomcat-container || true &&
+                        docker run -d --name my-mysql-container -p 8081:8080 my-image-1 &&
+                        docker run -d --name my-tomcat-container -p 8082:8080 my-image-2 &&
+                        docker rmi -f my-image-1 my-image-2 &&
+                        rm -rf /home/ec2-user/dockerfiles/*
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Clean Master Server') {
+            steps {
+                echo 'Cleaning up temporary files on Jenkins master server...'
+                sh 'rm -rf Dockerfile-mysql Dockerfile-tomcat dump target/LoginWebApp.war'
+            }
+        }
+    }  
+}
