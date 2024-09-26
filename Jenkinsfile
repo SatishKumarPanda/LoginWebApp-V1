@@ -51,7 +51,7 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Creating directory for Dockerfiles on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
                         mkdir -p /home/ec2-user/dockerfiles
                         "
                     '''
@@ -64,10 +64,10 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Copying Dockerfiles to remote server...'
                     sh '''
-                        scp -o StrictHostKeyChecking=no Dockerfile-mysql ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
-                        scp -o StrictHostKeyChecking=no Dockerfile-tomcat ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
-                        scp -o StrictHostKeyChecking=no -r dump ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
-                        scp -o StrictHostKeyChecking=no target/LoginWebApp.war ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
+                        scp -o StrictHostKeyChecking=no Dockerfile-mysql ec2-user@13.233.230.148:/home/ec2-user/dockerfiles/
+                        scp -o StrictHostKeyChecking=no Dockerfile-tomcat ec2-user@13.233.230.148:/home/ec2-user/dockerfiles/
+                        scp -o StrictHostKeyChecking=no -r dump ec2-user@13.233.230.148:/home/ec2-user/dockerfiles/
+                        scp -o StrictHostKeyChecking=no target/LoginWebApp.war ec2-user@13.233.230.148:/home/ec2-user/dockerfiles/
                     '''
                 }
             }
@@ -78,7 +78,7 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Building Docker images on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148"
                         cd /home/ec2-user/dockerfiles &&
                         docker build -t my-image-1 -f Dockerfile-mysql . &&
                         docker build -t my-image-2 -f Dockerfile-tomcat .
@@ -93,7 +93,7 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Logging in to Docker Hub...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
                         echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
                         "
                     '''
@@ -106,7 +106,7 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Pushing Docker images to Docker Hub...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
                         docker push  satishkumarpanda/my-image-1 &&
                         docker push satishkumarpanda/my-image-2
                         "
@@ -120,7 +120,7 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Running Docker containers on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
                         docker run -d --name my-mysql-container -p 8081:8080 my-image-1 &&
                         docker run -d --name my-tomcat-container -p 8082:8080 my-image-2
                         "
@@ -144,7 +144,7 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Cleaning up Docker images and temporary files on deployment server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
                         docker rmi my-image-1 my-image-2 &&
                         rm -rf /home/ec2-user/dockerfiles/*
                         "
