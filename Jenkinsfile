@@ -109,6 +109,7 @@ pipeline {
 
                         docker push satishkumarpanda/my-tomcat && \
                         echo 'Pushed my-tomcat successfully.' || exit 1
+                        'docker logout'  
                         "
                     '''
                 }
