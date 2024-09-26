@@ -7,6 +7,9 @@ pipeline {
     environment {
         AWS_ACCESS_KEY_ID     = credentials('jenkins-aws-secret-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('jenkins-aws-secret-access-key')
+        DOCKERHUB_CREDENTIALS  = credentials('docker-hub')
+        DEPLOYMENT_SERVER      = 'ec2-user@13.233.230.148'
+        SSH_OPTIONS            = '-o StrictHostKeyChecking=no'
     }      
 
     stages {
@@ -50,7 +53,7 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Creating directory for Dockerfiles on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
                         mkdir -p /home/ec2-user/dockerfiles
                         "
                     '''
@@ -63,11 +66,10 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Copying Dockerfiles to remote server...'
                     sh '''
-                        scp -o StrictHostKeyChecking=no  Dockerfile-mysql ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
-                        scp -o StrictHostKeyChecking=no Dockerfile-tomcat ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
-                        scp -o StrictHostKeyChecking=no -r dump ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
-                         scp -o StrictHostKeyChecking=no target/LoginWebApp.war ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
-                        
+                        scp ${SSH_OPTIONS} Dockerfile-mysql ${DEPLOYMENT_SERVER}:/home/ec2-user/dockerfiles/
+                        scp ${SSH_OPTIONS} Dockerfile-tomcat ${DEPLOYMENT_SERVER}:/home/ec2-user/dockerfiles/
+                        scp ${SSH_OPTIONS} -r dump ${DEPLOYMENT_SERVER}:/home/ec2-user/dockerfiles/
+                        scp ${SSH_OPTIONS} target/LoginWebApp.war ${DEPLOYMENT_SERVER}:/home/ec2-user/dockerfiles/
                     '''
                 }
             }
@@ -78,12 +80,45 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Building Docker images on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
                         cd /home/ec2-user/dockerfiles &&
+                        sudo chmod 777 /var/run/docker.sock &&
                         docker build -t my-image-1 -f Dockerfile-mysql . &&
                         docker build -t my-image-2 -f Dockerfile-tomcat .
                         "
                     '''
+                }
+            }
+        }
+        
+        stage('Login to Docker Hub') {
+            steps {
+                sshagent(['Tomcat']) {
+                    script {
+                        withCredentials([usernamePassword(credentialsId: 'docker-hub', passwordVariable: 'DOCKER_PSW', usernameVariable: 'DOCKER_USR')]) {
+                            sh '''
+                                ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
+                                echo $DOCKER_PSW | docker login -u $DOCKER_USR --password-stdin && \
+                                echo 'Login successful.' || exit 1
+
+                                docker tag my-image-1 satishkumarpanda/my-mysql && \
+                                echo 'Tagged my-image-1 successfully.' || exit 1
+
+                                docker tag my-image-2 satishkumarpanda/my-tomcat && \
+                                echo 'Tagged my-image-2 successfully.' || exit 1
+
+                                docker push satishkumarpanda/my-mysql && \
+                                echo 'Pushed my-mysql successfully.' || exit 1
+
+                                docker push satishkumarpanda/my-tomcat && \
+                                echo 'Pushed my-tomcat successfully.' || exit 1
+
+                                docker logout && \
+                                echo 'Logged out of Docker Hub successfully.' || exit 1
+                                "
+                            '''
+                        }
+                    }
                 }
             }
         }
@@ -93,7 +128,11 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Running Docker containers on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
+                        docker stop my-mysql-container || true &&
+                        docker rm my-mysql-container || true &&
+                        docker stop my-tomcat-container || true &&
+                        docker rm my-tomcat-container || true &&
                         docker run -d --name my-mysql-container -p 8081:8080 my-image-1 &&
                         docker run -d --name my-tomcat-container -p 8082:8080 my-image-2
                         "
@@ -101,5 +140,29 @@ pipeline {
                 }
             }
         }
-    }
+
+        stage('Clean Master Server') {
+            steps {
+                echo 'Cleaning up temporary files on Jenkins master server...'
+                sh '''
+                    rm -rf Dockerfile-mysql Dockerfile-tomcat dump target/LoginWebApp.war &&
+                    echo "Cleanup completed on Jenkins master server."
+                '''
+            }
+        }
+
+        stage('Clean Deployment Server') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Cleaning up Docker images and temporary files on deployment server...'
+                    sh '''
+                        ssh ${SSH_OPTIONS} ${DEPLOYMENT_SERVER} "
+                        docker rmi -f my-image-1 my-image-2 &&
+                        rm -rf /home/ec2-user/dockerfiles/*
+                        "
+                    '''
+                }
+            }
+        }
+    }  
 }
