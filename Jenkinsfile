@@ -125,6 +125,10 @@ pipeline {
                     echo 'Running Docker containers on remote server...'
                     sh '''
                         ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
+                        docker stop my-mysql-container || true &&
+                        docker rm my-mysql-container || true
+                        docker stop my-tomcat-container || true &&
+                        docker rm my-tomcat-container || true
                         docker run -d --name my-mysql-container -p 8081:8080 my-image-1 &&
                         docker run -d --name my-tomcat-container -p 8082:8080 my-image-2
                         "
