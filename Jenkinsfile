@@ -95,19 +95,7 @@ pipeline {
                     echo 'Logging in to Docker Hub...'
                     sh '''
                         ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
-                        echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
-                        "
-                    '''
-                }
-            }
-        }
-
-        stage('Push to Docker Hub') {
-            steps {
-                sshagent(['Tomcat']) {
-                    echo 'Pushing Docker images to Docker Hub...'
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
+                        echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin 
                         docker tag my-image-1 satishkumarpanda/my-mysql &&
                         docker tag my-image-2 satishkumarpanda/my-tomcat
                         docker push satishkumarpanda/my-mysql &&
