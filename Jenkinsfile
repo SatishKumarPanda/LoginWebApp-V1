@@ -78,7 +78,7 @@ pipeline {
                 sshagent(['Tomcat']) {
                     echo 'Building Docker images on remote server...'
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148"
+                        ssh -o StrictHostKeyChecking=no ec2-user@13.233.230.148 "
                         cd /home/ec2-user/dockerfiles &&
                         docker build -t my-image-1 -f Dockerfile-mysql . &&
                         docker build -t my-image-2 -f Dockerfile-tomcat .
