@@ -1,31 +1,154 @@
 pipeline {
-    agent any
+    agent any 
     tools {
-        maven 'localMaven'
+        maven 'Maven'
     }
 
-    parameters {
-         string(name: 'tomcat_stag', defaultValue: '35.154.81.229', description: 'Tomcat Staging Server')
-    }
+    environment {
+        AWS_ACCESS_KEY_ID     = credentials('jenkins-aws-secret-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('jenkins-aws-secret-access-key')
+        DOCKERHUB_CREDENTIALS  = credentials('docker-hub')
+    }      
 
-stages{
-        stage('Build'){
+    stages {
+        stage('Build') {
             steps {
-                sh 'mvn clean package'
+                echo 'Building the application...'
+                sh 'mvn clean install'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                echo 'Running tests...'
+                sh 'mvn test'
+            }
+        }
+        
+        stage('Publish') {
+            steps {
+                echo 'Packaging the application...'
+                sh 'mvn package'
+            }
+        }
+
+        stage('Upload to S3') {
+            steps {
+                echo 'Configuring AWS and uploading artifact...'
+                sh 'aws configure set region ap-south-1'
+                sh 'aws s3 cp ./target/*.war s3://jenkinsucket01'
             }
             post {
                 success {
-                    echo 'Archiving the artifacts'
-                    archiveArtifacts artifacts: '**/*.war'
+                    echo 'Archiving artifacts...'
+                    archiveArtifacts artifacts: 'target/*.war', fingerprint: true
                 }
             }
         }
 
-        stage ('Deployments'){
-                stage ('Deploy to Staging Server'){
-                    steps {
-                        sh "scp **/*.war jenkins@${params.tomcat_stag}:/usr/share/tomcat/webapps"
-                    }
+        stage('Prepare Docker Directory on Server') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Creating directory for Dockerfiles on remote server...'
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        mkdir -p /home/ec2-user/dockerfiles
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Copy Dockerfiles to Server') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Copying Dockerfiles to remote server...'
+                    sh '''
+                        scp -o StrictHostKeyChecking=no Dockerfile-mysql ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
+                        scp -o StrictHostKeyChecking=no Dockerfile-tomcat ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
+                        scp -o StrictHostKeyChecking=no -r dump ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
+                        scp -o StrictHostKeyChecking=no target/LoginWebApp.war ec2-user@3.111.169.66:/home/ec2-user/dockerfiles/
+                    '''
+                }
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Building Docker images on remote server...'
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        cd /home/ec2-user/dockerfiles &&
+                        docker build -t my-image-1 -f Dockerfile-mysql . &&
+                        docker build -t my-image-2 -f Dockerfile-tomcat .
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Login to Docker Hub') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Logging in to Docker Hub...'
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Pushing Docker images to Docker Hub...'
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        docker push  satishkumarpanda/my-image-1 &&
+                        docker push satishkumarpanda/my-image-2
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Server') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Running Docker containers on remote server...'
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        docker run -d --name my-mysql-container -p 8081:8080 my-image-1 &&
+                        docker run -d --name my-tomcat-container -p 8082:8080 my-image-2
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Clean Master Server') {
+            steps {
+                echo 'Cleaning up temporary files on Jenkins master server...'
+                sh '''
+                    rm -rf Dockerfile-mysql Dockerfile-tomcat dump target/LoginWebApp.war &&
+                    echo "Cleanup completed on Jenkins master server."
+                '''
+            }
+        }
+
+        stage('Clean Deployment Server') {
+            steps {
+                sshagent(['Tomcat']) {
+                    echo 'Cleaning up Docker images and temporary files on deployment server...'
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no ec2-user@3.111.169.66 "
+                        docker rmi my-image-1 my-image-2 &&
+                        rm -rf /home/ec2-user/dockerfiles/*
+                        "
+                    '''
                 }
             }
         }
