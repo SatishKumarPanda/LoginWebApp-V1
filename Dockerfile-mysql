@@ -1,14 +1,22 @@
 # Use the official MySQL image as a base
 FROM mysql:5.7.28
 
-# Set environment variables
+# Set environment variables for MySQL
 ENV MYSQL_DATABASE=devopsclass
-ENV MYSQL_USER=ranjit
+ENV MYSQL_USER=Satish
 ENV MYSQL_PASSWORD=Sunday@2019
 ENV MYSQL_ROOT_PASSWORD=Sunday@2019
 
+# Set the working directory
+WORKDIR /dockerfiles
+
 # Copy initialization scripts (if any)
-COPY ./dump /docker-entrypoint-initdb.d
+# Place your SQL scripts in the dump directory, which will be executed on container startup
+COPY dockerfiles/dump /docker-entrypoint-initdb.d
 
 # Expose the MySQL port
 EXPOSE 3306
+
+# Optional: Command to run MySQL
+# The MySQL image has a default command, but you can specify it if needed
+# CMD ["mysqld"]
