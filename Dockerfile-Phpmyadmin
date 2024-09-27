@@ -1,0 +1,10 @@
+phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    links:
+        - db:db
+    ports:
+        - 8383:80
+    environment:
+        MYSQL_USER: ranjit
+        MYSQL_PASSWORD: Sunday@2019
+        MYSQL_ROOT_PASSWORD: Sunday@2019
